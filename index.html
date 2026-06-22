@@ -2,7 +2,7 @@
 <html lang="sk">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0E1518">
 <title>Zdravotný denník</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -38,7 +38,7 @@
     -webkit-font-smoothing:antialiased;
     padding-bottom:120px;
     max-width:100%;position:relative;
-    touch-action:pan-y pinch-zoom;
+    touch-action:pan-y;
   }
   .wrap{max-width:560px;margin:0 auto;padding:0 16px}
 
@@ -68,7 +68,7 @@
   .range.show{display:flex}
   .range input{
     background:var(--surface);border:1px solid var(--line);color:var(--ink);
-    border-radius:9px;padding:7px 9px;font-family:inherit;font-size:13px;
+    border-radius:9px;padding:7px 9px;font-family:inherit;font-size:16px;
   }
   .range span{color:var(--faint);font-size:13px}
 
@@ -95,6 +95,9 @@
   .ev-title{font-size:15px;font-weight:500;margin-top:1px;word-wrap:break-word}
   .ev.problem .ev-title{color:var(--problem);font-weight:600}
   .ev-sub{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .ev-ref{display:inline-flex;align-items:center;gap:4px;margin-top:6px;font-size:11.5px;color:var(--food);
+    background:var(--food-dim);border:1px solid rgba(127,182,161,.28);border-radius:7px;padding:3px 9px;cursor:pointer}
+  .ev-ref:active{opacity:.7}
   .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
   .tag{background:var(--problem-dim);color:var(--problem);border:1px solid var(--problem-line);font-size:11.5px;padding:2px 8px;border-radius:6px;font-weight:500}
 
@@ -116,10 +119,11 @@
 
   /* Sheet / modal */
   .overlay{position:fixed;inset:0;z-index:40;background:rgba(5,9,10,.6);backdrop-filter:blur(3px);
-    display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+    display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s;touch-action:pan-y}
   .overlay.show{opacity:1;pointer-events:auto}
   .sheet{
     background:var(--surface);width:100%;max-width:560px;max-height:90vh;overflow-y:auto;
+    touch-action:pan-y;-webkit-overflow-scrolling:touch;
     border-radius:22px 22px 0 0;border-top:1px solid var(--line-strong);
     padding:8px 18px calc(26px + env(safe-area-inset-bottom));
     transform:translateY(20px);transition:transform .22s;
@@ -145,8 +149,9 @@
   .field .opt{color:var(--faint);font-weight:400}
   input[type=text],input[type=number],textarea,input[type=date],input[type=time],input[type=datetime-local],select.sel{
     width:100%;min-width:0;max-width:100%;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);
-    border-radius:11px;padding:12px 13px;font-family:inherit;font-size:15px;
+    border-radius:11px;padding:12px 13px;font-family:inherit;font-size:16px;
   }
+  input[type=datetime-local].dt{width:auto;max-width:100%}
   textarea{resize:vertical;min-height:64px;line-height:1.5}
   input:focus,textarea:focus{outline:none;border-color:var(--food);box-shadow:0 0 0 3px var(--food-dim)}
   .when{display:grid;grid-template-columns:1fr;gap:10px}
@@ -211,7 +216,7 @@
 <header>
   <div class="wrap">
     <div class="topbar">
-      <div class="brand">Zdravotný denník<small>jedlo a reakcie · v2</small></div>
+      <div class="brand">Zdravotný denník<small>jedlo a reakcie · v3</small></div>
       <div class="io">
         <button id="btnExport">Export</button>
         <button id="btnImport">Import</button>
@@ -247,6 +252,7 @@ const SYMPTOMS=[
   {k:'grcanie', l:'Grcanie'},
   {k:'bolest_brucha', l:'Bolesť brucha'},
   {k:'plavajuci_zaludok', l:'Plávajúci žalúdok'},
+  {k:'stres', l:'Stres'},
   {k:'necti_dobre', l:'Necíti sa dobre'},
   {k:'ine', l:'Iné', other:true},
 ];
@@ -298,6 +304,10 @@ function problemLabel(e){
 function followups(parentId){
   return entries.filter(e=>e.parentId===parentId).sort((a,b)=>new Date(a.eventAt)-new Date(b.eventAt));
 }
+function shortRef(p){
+  const d=new Date(p.eventAt);const sy=symSummary(p);const s=sy.length?sy.join(', '):'problém';
+  return d.getDate()+'.'+(d.getMonth()+1)+'. '+fmtTime(p.eventAt)+' · '+(s.length>32?s.slice(0,32)+'…':s);
+}
 
 /* ---------- render ---------- */
 function inPeriod(e){
@@ -348,17 +358,21 @@ function render(){
         const syms=symSummary(e);
         const isF=!!e.parentId;
         const stB=e.status?'<span class="st st-'+e.status+'">'+(STATUS_MAP[e.status]||'')+'</span>':'';
+        const par=isF?entries.find(x=>x.id===e.parentId):null;
         html+='<div class="ev problem'+(isF?' follow':'')+'" data-id="'+e.id+'"><div class="node"><div class="dot"></div></div>'+
           '<div class="ev-body"><div class="ev-time">'+time+(isF?' · vývoj':'')+'</div>'+
           '<div class="ev-title">'+(isF?'Vývoj':'Problém')+stB+'</div>'+
           (syms.length?'<div class="tags">'+syms.map(s=>'<span class="tag">'+esc(s)+'</span>').join('')+'</div>':'')+
-          (e.note?'<div class="ev-sub">'+esc(e.note)+'</div>':'')+'</div></div>';
+          (e.note?'<div class="ev-sub">'+esc(e.note)+'</div>':'')+
+          (par?'<div class="ev-ref" data-go="'+par.id+'">↳ pôvodný problém: '+esc(shortRef(par))+'</div>':(isF?'<div class="ev-ref" style="color:var(--faint);background:transparent;border-color:var(--line)">↳ pôvodný problém zmazaný</div>':''))+
+          '</div></div>';
       }
     });
     html+='</div></div>';
   });
   app.innerHTML=html;
   app.querySelectorAll('.ev').forEach(el=>el.onclick=()=>openForm(null,entries.find(x=>x.id===el.dataset.id)));
+  app.querySelectorAll('.ev-ref[data-go]').forEach(el=>el.onclick=(ev)=>{ev.stopPropagation();const p=entries.find(x=>x.id===el.dataset.go);if(p)openForm(null,p)});
 }
 
 /* ---------- sheet ---------- */
@@ -410,7 +424,7 @@ function openForm(type,entry,presetParent){
 
   // when (editable event time)
   html+='<label class="field"><span class="lab">'+(type==='food'?'Kedy zjedla':'Kedy nastalo')+'</span>'+
-    '<input type="datetime-local" id="wDT" value="'+dtLocalVal(ev)+'"></label>';
+    '<input type="datetime-local" id="wDT" class="dt" value="'+dtLocalVal(ev)+'"></label>';
 
   // immutable logged stamp
   const logged=isEdit?entry.loggedAt:now;
