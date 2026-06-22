@@ -98,6 +98,17 @@
   .ev-ref{display:inline-flex;align-items:center;gap:4px;margin-top:6px;font-size:11.5px;color:var(--food);
     background:var(--food-dim);border:1px solid rgba(127,182,161,.28);border-radius:7px;padding:3px 9px;cursor:pointer}
   .ev-ref:active{opacity:.7}
+  .ev.activity .dot{background:#6FA6CC;box-shadow:0 0 0 4px var(--bg)}
+  .day-right{display:flex;flex-direction:column;align-items:flex-end;gap:7px}
+  .wchip{font-size:12px;color:var(--faint);background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:4px 9px;cursor:pointer;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .wchip.set{color:var(--ink);border-color:var(--line-strong)}
+  .wpick .sym.on{background:rgba(232,192,106,.16);border-color:rgba(232,192,106,.42);color:#E8C06A}
+  .wopts{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+  .wopt{background:var(--surface-2);border:1px solid var(--line);color:var(--muted);border-radius:10px;padding:10px 12px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px}
+  .wopt:hover{border-color:var(--line-strong);color:var(--ink)}
+  .wopt.on{background:rgba(232,192,106,.15);border-color:rgba(232,192,106,.5);color:#E8C06A}
+  .choose .act .ico{color:#6FA6CC}
+  .choose .wthr .ico{color:#E8C06A}
   .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
   .tag{background:var(--problem-dim);color:var(--problem);border:1px solid var(--problem-line);font-size:11.5px;padding:2px 8px;border-radius:6px;font-weight:500}
 
@@ -216,7 +227,7 @@
 <header>
   <div class="wrap">
     <div class="topbar">
-      <div class="brand">Zdravotný denník<small>jedlo a reakcie · v3</small></div>
+      <div class="brand">Zdravotný denník<small>jedlo · aktivity · počasie · v4</small></div>
       <div class="io">
         <button id="btnExport">Export</button>
         <button id="btnImport">Import</button>
@@ -261,12 +272,17 @@ const WD=['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
 const MON=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
 const STATUS=[['horsie','Horšie'],['rovnake','Rovnaké'],['lepsie','Lepšie'],['ustupilo','Ustúpilo']];
 const STATUS_MAP=Object.fromEntries(STATUS);
+const WCOND=[['slnecno','Slnečno','☀'],['polojasno','Polojasno','⛅'],['zamracene','Zamračené','☁'],['dazd','Dážď','🌧'],['sneh','Sneh','❄']];
+const WCOND_MAP=Object.fromEntries(WCOND.map(w=>[w[0],{l:w[1],ic:w[2]}]));
 
 let entries=load();
+let weather=loadWeather();
 let period='7', customFrom='', customTo='';
 
 function load(){try{return JSON.parse(localStorage.getItem(STORE))||[]}catch(e){return[]}}
 function save(){try{localStorage.setItem(STORE,JSON.stringify(entries))}catch(e){alert('Nepodarilo sa uložiť (úložisko prehliadača).')}}
+function loadWeather(){try{return JSON.parse(localStorage.getItem('mama_health_weather_v1'))||{}}catch(e){return{}}}
+function saveWeather(){try{localStorage.setItem('mama_health_weather_v1',JSON.stringify(weather))}catch(e){}}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 
@@ -339,12 +355,20 @@ function render(){
     const d=new Date(key+'T00:00:00');
     const rel=relLabel(key);
     const probs=evs.filter(e=>e.type==='problem').length;
-    const foods=evs.length-probs;
+    const acts=evs.filter(e=>e.type==='activity').length;
+    const foods=evs.filter(e=>e.type==='food').length;
+    const w=weather[key], hasW=w&&(w.cond||w.temp!=null||w.note);
+    const wchip=hasW
+      ? '<div class="wchip set" data-wday="'+key+'">'+(w.cond?WCOND_MAP[w.cond].ic:'•')+(w.temp!=null?' '+w.temp+'°':'')+'</div>'
+      : '<div class="wchip" data-wday="'+key+'">+ počasie</div>';
+    const mp=[];
+    if(foods)mp.push(foods+' × jedlo');
+    if(acts)mp.push(acts+' × aktivita');
+    if(probs)mp.push('<span class="bad">'+probs+' × problém</span>');
     html+='<div class="day"><div class="day-head"><div class="day-date">'+
       '<div class="day-num">'+d.getDate()+'. '+MON[d.getMonth()]+'</div>'+
       '<div class="day-wd">'+(rel?'<span class="day-rel">'+rel+'</span> · ':'')+WD[d.getDay()]+' '+d.getFullYear()+'</div>'+
-      '</div><div class="day-meta">'+foods+' jedlo'+(foods===1?'':foods>=2&&foods<=4?'á':'')+
-      (probs?'<br><span class="bad">'+probs+' problém'+(probs===1?'':probs<=4?'y':'ov')+'</span>':'')+'</div></div>';
+      '</div><div class="day-right">'+wchip+'<div class="day-meta">'+mp.join('<br>')+'</div></div></div>';
     html+='<div class="tl">';
     evs.forEach(e=>{
       const time=fmtTime(e.eventAt);
@@ -354,6 +378,12 @@ function render(){
           '<div class="ev-body"><div class="ev-time">'+time+'</div>'+
           '<div class="ev-title">'+esc(e.foodName||'Jedlo')+'</div>'+
           (sub?'<div class="ev-sub">'+esc(sub)+'</div>':'')+'</div></div>';
+      }else if(e.type==='activity'){
+        const range=e.endAt?time+'–'+fmtTime(e.endAt):time;
+        html+='<div class="ev activity" data-id="'+e.id+'"><div class="node"><div class="dot"></div></div>'+
+          '<div class="ev-body"><div class="ev-time">'+range+'</div>'+
+          '<div class="ev-title">'+esc(e.actName||'Aktivita')+'</div>'+
+          (e.actAmount?'<div class="ev-sub">'+esc(e.actAmount)+'</div>':'')+'</div></div>';
       }else{
         const syms=symSummary(e);
         const isF=!!e.parentId;
@@ -373,6 +403,7 @@ function render(){
   app.innerHTML=html;
   app.querySelectorAll('.ev').forEach(el=>el.onclick=()=>openForm(null,entries.find(x=>x.id===el.dataset.id)));
   app.querySelectorAll('.ev-ref[data-go]').forEach(el=>el.onclick=(ev)=>{ev.stopPropagation();const p=entries.find(x=>x.id===el.dataset.go);if(p)openForm(null,p)});
+  app.querySelectorAll('.wchip[data-wday]').forEach(el=>el.onclick=(ev)=>{ev.stopPropagation();openWeather(el.dataset.wday)});
 }
 
 /* ---------- sheet ---------- */
@@ -385,9 +416,13 @@ function chooseType(){
   openSheet('<h3>Čo chceš pridať?</h3><div class="choose">'+
     '<button class="food" id="cFood"><span class="ico">●</span><span class="lbl">Jedlo</span><span class="desc">čo zjedla, kedy</span></button>'+
     '<button class="prob" id="cProb"><span class="ico">●</span><span class="lbl">Problém</span><span class="desc">symptóm a kedy nastal</span></button>'+
+    '<button class="act" id="cAct"><span class="ico">●</span><span class="lbl">Aktivita</span><span class="desc">pohyb, od–do</span></button>'+
+    '<button class="wthr" id="cWthr"><span class="ico">☀</span><span class="lbl">Počasie</span><span class="desc">denné, kvôli slnku</span></button>'+
     '</div>');
   document.getElementById('cFood').onclick=()=>openForm('food');
   document.getElementById('cProb').onclick=()=>openForm('problem');
+  document.getElementById('cAct').onclick=()=>openForm('activity');
+  document.getElementById('cWthr').onclick=()=>openWeather(todayKey());
 }
 
 function dateVal(iso){const d=new Date(iso);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
@@ -402,12 +437,16 @@ function openForm(type,entry,presetParent){
   let parentId=isEdit?(entry.parentId||''):(presetParent||'');
   let status=isEdit?(entry.status||''):'';
   const isFollow=type==='problem'&&parentId;
-  let html='<h3>'+(isEdit?'Upraviť ':'')+(type==='food'?'Jedlo':(isFollow?'Vývoj problému':'Problém'))+'</h3>';
+  const titleMap={food:'Jedlo',activity:'Aktivita'};
+  let html='<h3>'+(isEdit?'Upraviť ':'')+(titleMap[type]||(isFollow?'Vývoj problému':'Problém'))+'</h3>';
 
   if(type==='food'){
     html+='<label class="field"><span class="lab">Čo zjedla</span><input type="text" id="fName" placeholder="napr. tvarohový koláč" value="'+esc(isEdit?entry.foodName:'')+'"></label>'+
       '<label class="field"><span class="lab">Ingrediencie <span class="opt">nepovinné</span></span><textarea id="fIng" placeholder="napr. tvaroh, vajce, múka, cukor">'+esc(isEdit?entry.foodIngredients:'')+'</textarea></label>'+
       '<label class="field"><span class="lab">Množstvo <span class="opt">nepovinné</span></span><input type="text" id="fAmt" placeholder="napr. 1 kus, 200 g, malá porcia" value="'+esc(isEdit?entry.foodAmount:'')+'"></label>';
+  }else if(type==='activity'){
+    html+='<label class="field"><span class="lab">Aktivita</span><input type="text" id="aName" placeholder="napr. prechádzka, bicykel, upratovanie" value="'+esc(isEdit?entry.actName:'')+'"></label>'+
+      '<label class="field"><span class="lab">Koľko <span class="opt">nepovinné</span></span><input type="text" id="aAmt" placeholder="napr. 5 km, 8000 krokov, 1 hod" value="'+esc(isEdit?entry.actAmount:'')+'"></label>';
   }else{
     const opts=rootProblems(isEdit?entry.id:null);
     html+='<label class="field"><span class="lab">Nadviazať na predošlý problém <span class="opt">nepovinné</span></span>'+
@@ -423,8 +462,14 @@ function openForm(type,entry,presetParent){
   }
 
   // when (editable event time)
-  html+='<label class="field"><span class="lab">'+(type==='food'?'Kedy zjedla':'Kedy nastalo')+'</span>'+
-    '<input type="datetime-local" id="wDT" class="dt" value="'+dtLocalVal(ev)+'"></label>';
+  if(type==='activity'){
+    const evEnd=isEdit&&entry.endAt?entry.endAt:'';
+    html+='<label class="field"><span class="lab">Od</span><input type="datetime-local" id="wStart" class="dt" value="'+dtLocalVal(ev)+'"></label>'+
+      '<label class="field"><span class="lab">Do <span class="opt">nepovinné</span></span><input type="datetime-local" id="wEnd" class="dt" value="'+(evEnd?dtLocalVal(evEnd):'')+'"></label>';
+  }else{
+    html+='<label class="field"><span class="lab">'+(type==='food'?'Kedy zjedla':'Kedy nastalo')+'</span>'+
+      '<input type="datetime-local" id="wDT" class="dt" value="'+dtLocalVal(ev)+'"></label>';
+  }
 
   // immutable logged stamp
   const logged=isEdit?entry.loggedAt:now;
@@ -508,9 +553,18 @@ function openForm(type,entry,presetParent){
     if(confirm('Zmazať tento záznam?')){entries=entries.filter(x=>x.id!==entry.id);save();render();closeSheet()}
   };
   document.getElementById('bSave').onclick=()=>{
-    const dt=document.getElementById('wDT').value;
-    if(!dt){alert('Vyber dátum a čas.');return}
-    const eventAt=new Date(dt).toISOString();
+    let eventAt, endAt=null;
+    if(type==='activity'){
+      const ds=document.getElementById('wStart').value;
+      if(!ds){alert('Vyber kedy aktivita začala (Od).');return}
+      eventAt=new Date(ds).toISOString();
+      const de=document.getElementById('wEnd').value;
+      if(de){if(new Date(de)<new Date(ds)){alert('„Do" nemôže byť pred „Od".');return}endAt=new Date(de).toISOString();}
+    }else{
+      const dt=document.getElementById('wDT').value;
+      if(!dt){alert('Vyber dátum a čas.');return}
+      eventAt=new Date(dt).toISOString();
+    }
     const base=isEdit?entry:{id:uid(),loggedAt:now};
     base.type=type;base.eventAt=eventAt;
     if(type==='food'){
@@ -518,6 +572,11 @@ function openForm(type,entry,presetParent){
       base.foodIngredients=document.getElementById('fIng').value.trim();
       base.foodAmount=document.getElementById('fAmt').value.trim();
       if(!base.foodName){alert('Napíš čo zjedla.');return}
+    }else if(type==='activity'){
+      base.actName=document.getElementById('aName').value.trim();
+      base.actAmount=document.getElementById('aAmt').value.trim();
+      base.endAt=endAt;
+      if(!base.actName){alert('Napíš akú aktivitu.');return}
     }else{
       const pnote=document.getElementById('pNote').value.trim();
       if(!parentId&&!chosen.length){alert('Vyber aspoň jeden symptóm.');return}
@@ -535,18 +594,67 @@ function openForm(type,entry,presetParent){
   };
 }
 
+/* ---------- weather ---------- */
+function openWeather(dateKey){
+  dateKey=dateKey||todayKey();
+  const ex=weather[dateKey]||null;
+  const isEdit=!!ex;
+  let cond=ex?(ex.cond||''):'';
+  let html='<h3>Počasie</h3>';
+  html+='<label class="field"><span class="lab">Deň</span><input type="date" id="wDay" class="dt" value="'+dateKey+'"></label>';
+  html+='<div class="lab" style="font-size:12.5px;color:var(--muted);font-weight:500;margin:0 2px 9px">Aké bolo počasie <span class="opt" style="color:var(--faint)">kvôli slnku</span></div>'+
+    '<div class="symbox wpick" id="wCond">'+
+    WCOND.map(w=>'<button type="button" class="sym'+(cond===w[0]?' on':'')+'" data-k="'+w[0]+'">'+w[2]+'  '+w[1]+'</button>').join('')+
+    '</div>';
+  html+='<label class="field"><span class="lab">Teplota °C <span class="opt">nepovinné</span></span><input type="number" id="wTemp" inputmode="numeric" placeholder="napr. 27" value="'+(ex&&ex.temp!=null?ex.temp:'')+'"></label>';
+  html+='<label class="field"><span class="lab">Poznámka <span class="opt">nepovinné</span></span><textarea id="wNote" placeholder="napr. silné slnko, bola vonku 2h">'+esc(ex?(ex.note||''):'')+'</textarea></label>';
+  html+='<div class="actions">'+
+    (isEdit?'<button class="btn danger" id="bDel">Zmazať</button>':'')+
+    '<button class="btn ghost" id="bCancel">Zrušiť</button>'+
+    '<button class="btn primary" id="bSave">Uložiť</button></div>';
+  openSheet(html);
+  const cb=document.getElementById('wCond');
+  cb.querySelectorAll('.sym').forEach(b=>b.onclick=()=>{
+    if(cond===b.dataset.k){cond='';b.classList.remove('on')}
+    else{cond=b.dataset.k;cb.querySelectorAll('.sym').forEach(x=>x.classList.remove('on'));b.classList.add('on')}
+  });
+  document.getElementById('bCancel').onclick=closeSheet;
+  if(isEdit)document.getElementById('bDel').onclick=()=>{
+    if(confirm('Zmazať počasie pre tento deň?')){delete weather[dateKey];saveWeather();render();closeSheet()}
+  };
+  document.getElementById('bSave').onclick=()=>{
+    const day=document.getElementById('wDay').value;
+    if(!day){alert('Vyber deň.');return}
+    const tempRaw=document.getElementById('wTemp').value.trim();
+    const temp=tempRaw===''?null:Number(tempRaw);
+    if(temp!=null&&isNaN(temp)){alert('Teplota musí byť číslo.');return}
+    const note=document.getElementById('wNote').value.trim();
+    if(!cond&&temp==null&&!note){alert('Vyplň aspoň počasie, teplotu alebo poznámku.');return}
+    if(isEdit&&day!==dateKey)delete weather[dateKey];
+    weather[day]={cond:cond||'',temp:temp,note:note};
+    saveWeather();render();closeSheet();
+  };
+}
+
 /* ---------- CSV ---------- */
-const COLS=['id','type','logged_at','event_at','food_name','food_ingredients','food_amount','symptoms','headache_level','thigh_side','other_symptom','note','parent_id','status'];
+const COLS=['id','type','logged_at','event_at','end_at','food_name','food_ingredients','food_amount','act_name','act_amount','symptoms','headache_level','thigh_side','other_symptom','note','parent_id','status','condition','temp'];
 function csvCell(v){v=v==null?'':String(v);return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
 function exportCSV(){
   const rows=[COLS.join(',')];
-  entries.forEach(e=>{
-    rows.push([
-      e.id,e.type,e.loggedAt,e.eventAt,
-      e.foodName||'',e.foodIngredients||'',e.foodAmount||'',
-      (e.symptoms||[]).join('|'),e.headacheLevel||'',e.thighSide||'',e.otherSymptom||'',e.note||'',
-      e.parentId||'',e.status||''
-    ].map(csvCell).join(','));
+  const push=o=>rows.push(COLS.map(c=>csvCell(o[c]==null?'':o[c])).join(','));
+  entries.forEach(e=>push({
+    id:e.id,type:e.type,logged_at:e.loggedAt,event_at:e.eventAt,end_at:e.endAt||'',
+    food_name:e.foodName||'',food_ingredients:e.foodIngredients||'',food_amount:e.foodAmount||'',
+    act_name:e.actName||'',act_amount:e.actAmount||'',
+    symptoms:(e.symptoms||[]).join('|'),headache_level:e.headacheLevel||'',thigh_side:e.thighSide||'',
+    other_symptom:e.otherSymptom||'',note:e.note||'',parent_id:e.parentId||'',status:e.status||'',
+    condition:'',temp:''
+  }));
+  Object.keys(weather).sort().forEach(dk2=>{
+    const w=weather[dk2];if(!(w.cond||w.temp!=null||w.note))return;
+    push({id:'w_'+dk2,type:'weather',logged_at:'',event_at:new Date(dk2+'T12:00').toISOString(),end_at:'',
+      food_name:'',food_ingredients:'',food_amount:'',act_name:'',act_amount:'',symptoms:'',headache_level:'',
+      thigh_side:'',other_symptom:'',note:w.note||'',parent_id:'',status:'',condition:w.cond||'',temp:(w.temp!=null?w.temp:'')});
   });
   const blob=new Blob(['\ufeff'+rows.join('\r\n')],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -570,16 +678,24 @@ function importCSV(text){
   const head=rows[0].map(h=>h.trim());
   const idx=Object.fromEntries(COLS.map(c=>[c,head.indexOf(c)]));
   if(idx.type<0||idx.event_at<0){alert('CSV nemá očakávané stĺpce (type, event_at…).');return}
-  const out=[];
+  const out=[];const wmap={};
   for(let i=1;i<rows.length;i++){
     const r=rows[i];const g=c=>idx[c]>=0?(r[idx[c]]||'').trim():'';
-    const type=g('type');if(type!=='food'&&type!=='problem')continue;
+    const type=g('type');
+    if(type==='weather'){
+      const ea=g('event_at');if(!ea)continue;
+      const dk2=dkey(ea);const t=g('temp');
+      wmap[dk2]={cond:g('condition')||'',temp:t===''?null:Number(t),note:g('note')||''};
+      continue;
+    }
+    if(type!=='food'&&type!=='problem'&&type!=='activity')continue;
     const e={
       id:g('id')||uid(),type,
       loggedAt:g('logged_at')||g('event_at')||new Date().toISOString(),
       eventAt:g('event_at')||new Date().toISOString(),
     };
     if(type==='food'){e.foodName=g('food_name');e.foodIngredients=g('food_ingredients');e.foodAmount=g('food_amount');}
+    else if(type==='activity'){e.actName=g('act_name');e.actAmount=g('act_amount');e.endAt=g('end_at')||null;}
     else{
       e.symptoms=g('symptoms')?g('symptoms').split('|').filter(Boolean):[];
       e.headacheLevel=g('headache_level')?+g('headache_level'):null;
@@ -588,15 +704,16 @@ function importCSV(text){
     }
     out.push(e);
   }
-  if(!out.length){alert('Nenašli sa platné záznamy.');return}
-  if(!confirm('Import prepíše celý journal ('+entries.length+' → '+out.length+' záznamov). Pokračovať?'))return;
-  entries=out;save();render();
-  alert('Naimportované: '+out.length+' záznamov.');
+  const wc=Object.keys(wmap).length;
+  if(!out.length&&!wc){alert('Nenašli sa platné záznamy.');return}
+  if(!confirm('Import prepíše celý journal ('+entries.length+' → '+out.length+' záznamov, '+wc+' dní počasia). Pokračovať?'))return;
+  entries=out;weather=wmap;save();saveWeather();render();
+  alert('Naimportované: '+out.length+' záznamov a '+wc+' dní počasia.');
 }
 
 /* ---------- wire up ---------- */
 document.getElementById('fab').onclick=chooseType;
-document.getElementById('btnExport').onclick=()=>{if(!entries.length){alert('Žiadne dáta na export.');return}exportCSV()};
+document.getElementById('btnExport').onclick=()=>{if(!entries.length&&!Object.keys(weather).length){alert('Žiadne dáta na export.');return}exportCSV()};
 document.getElementById('btnImport').onclick=()=>document.getElementById('fileIn').click();
 document.getElementById('fileIn').onchange=e=>{const f=e.target.files[0];if(!f)return;
   const rd=new FileReader();rd.onload=()=>{importCSV(rd.result);e.target.value=''};rd.readAsText(f)};
